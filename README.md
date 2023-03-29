@@ -101,3 +101,4 @@ For now let's just verify that the port config option is working:
   "code": 403
 ```
 
+Quite a few Kind config options exist and it's fun/interesting to explore them. They're documented [here](https://kind.sigs.k8s.io/docs/user/configuration/)
