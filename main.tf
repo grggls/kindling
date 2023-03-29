@@ -4,6 +4,10 @@ terraform {
       source = "tehcyx/kind"
       version = "0.0.16"
     }
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = ">= 1.7.0"
+    }
   }
 }
 
@@ -59,4 +63,25 @@ resource "kind_cluster" "kindle" {
       TOML
     ]
   }
+}
+
+# set up the TF kubernetes provider
+provider "kubernetes" {
+  config_path    = "./kindle-config"
+  config_context = "kind-kindle"
+}
+
+# create a namespace for Argo
+resource "kubernetes_namespace" "argocd" {
+  metadata {
+    name = "argocd"
+  }
+}
+
+provider "kubectl" {
+  config_path = "./kindle-config"
+}
+
+resource "kubectl_manifest" "my_service" {
+    yaml_body = file("./argocd-install.yaml")
 }
