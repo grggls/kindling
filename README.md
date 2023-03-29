@@ -68,3 +68,36 @@ kube-system          kube-proxy-mrjq9                               1/1     Runn
 kube-system          kube-scheduler-kindle-control-plane            1/1     Running   0          83s
 local-path-storage   local-path-provisioner-5ddd94ff66-sk2nn        1/1     Running   0          66
 ```
+
+## Basic Services
+
+At a minimum, our K8s cluster needs a few things to run. These have all been installed: 
+
+ - `kube-apiserver`
+ - `etcd`
+ - `kube-scheduler`
+ - `kube-controller-manager`
+
+The default network overlay for Kind is called `kindnet`, and we can see this in the list of runninng pods.
+
+I'm running Docker desktop for a container runtime on my Mac. Interestingly, Kind is running `containerd` as the container runtime inside the cluster.
+
+We've configured the API server to run on 127.0.0.1:6443 and avoided being assigned a random port by Kind. This might pave the way for standardizing our `kube-config` (and potentially storing it in source control) later.
+
+For now let's just verify that the port config option is working:
+```
+> curl -k https://localhost:6443/apis/apps/v1/namespaces/kube-system/deployments
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "deployments.apps is forbidden: User \"system:anonymous\" cannot list resource \"deployments\" in API group \"apps\" in the namespace \"kube-system\"",
+  "reason": "Forbidden",
+  "details": {
+    "group": "apps",
+    "kind": "deployments"
+  },
+  "code": 403
+```
+
