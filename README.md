@@ -96,13 +96,27 @@ Helm in Terraform is going to install some necessaries for you:
 
 The Terraform config here uses a module to install and configure ArgoCD on our Kind cluster. You'll want to get the ArgoCD client onto your local machine and have a look at the fine manual: https://argo-cd.readthedocs.io/en/stable/getting_started/
 
-ttps://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
 https://registry.terraform.io/modules/aigisuk/argocd/kubernetes/latest
 
 Some more steps to do in here: 
+https://kubebyexample.com/learning-paths/argo-cd/argo-cd-getting-started
 https://magmax.org/en/blog/argocd/
+
+This stuff could be better understood: 
+https://kind.sigs.k8s.io/docs/user/ingress/
+
+This helps:
+```
+> kubectl port-forward svc/argocd-server -n argocd 8080:443 &
+> curl localhost:8080
+Handling connection for 8080
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><title>Argo CD</title><base href="/"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="assets/favicon/favicon-32x32.png" sizes="32x32"/><link rel="icon" type="image/png" href="assets/favicon/favicon-16x16.png" sizes="16x16"/><link href="assets/fonts.css" rel="stylesheet"><script defer="defer" src="main.c87b5e37f99fc2a30256.js"></script></head><body><noscript><p>Your browser does not support JavaScript. Please enable JavaScript to view the site. Alternatively, Argo CD can be used with the <a href="https://argoproj.github.io/argo-cd/cli_installation/">Argo CD CLI</a>.</p></noscript><div id="app"></div></body><script defer="defer" src="extensions.js"></script></html>%
+```
 
 ## Day 2
 
 Soon.
 At this point we're happy to take configuration duties inside your `kind` cluster away from Terraform and hand them over to ArgoCD.
+
+https://argo-cd.readthedocs.io/en/stable/getting_started/

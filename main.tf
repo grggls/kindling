@@ -113,6 +113,24 @@ resource "helm_release" "cert_manager" {
   ]
 }
 
+resource "kubectl_manifest" "cluster_issuer" {
+  yaml_body = <<YAML
+---
+# cert-issuer.yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: test-selfsigned
+spec:
+  selfSigned: {} 
+YAML
+
+  depends_on = [
+    helm_release.cert_manager
+  ]
+}
+
+# config overrides from here: https://github.com/kubernetes-sigs/kind/issues/1693#issuecomment-1060872664
 resource "helm_release" "ingress_nginx" {
   name = "ingress-nginx"
 
@@ -122,11 +140,21 @@ resource "helm_release" "ingress_nginx" {
   create_namespace = "true"
   namespace        = "ingress-nginx"
 
+  set {
+    name = "controller.hostPort.enabled"
+    value = "true"
+  }
+  
+  set {
+    name = "controller.service.type"
+    value = "NodePort"
+  }
+
   wait = true
   timeout = 900
 
   depends_on = [
-    helm_release.cert_manager
+    kubectl_manifest.cluster_issuer
   ]
 }
 
