@@ -1,17 +1,19 @@
 locals {
+  k8s_config_path    = pathexpand("~/.kube/config")
   kubernetes_version = "1.23.4"
   argocd_namespace   = "argocd"
+  argocd_domain      = "argocd.local"
 }
 
 terraform {
   required_providers {
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "2.19"
+    }
     kind = {
       source  = "tehcyx/kind"
       version = "0.0.16"
-    }
-    kubectl = {
-      source  = "gavinbunney/kubectl"
-      version = ">= 1.7.0"
     }
     helm = {
       source  = "hashicorp/helm"
@@ -21,12 +23,14 @@ terraform {
 }
 
 provider "kind" {
+  #  kubeconfig_path = local.k8s_config_path
 }
 
-resource "kind_cluster" "kindle" {
-  name           = "kindle"
-  node_image     = "kindest/node:v${local.kubernetes_version}"
-  wait_for_ready = "true"
+resource "kind_cluster" "this" {
+  name            = "kindling"
+  node_image      = "kindest/node:v${local.kubernetes_version}"
+  wait_for_ready  = "true"
+  kubeconfig_path = local.k8s_config_path
   kind_config {
     kind        = "Cluster"
     api_version = "kind.x-k8s.io/v1alpha4"
@@ -50,16 +54,8 @@ resource "kind_cluster" "kindle" {
       kubeadm_config_patches = [
         "kind: InitConfiguration\nnodeRegistration:\n  kubeletExtraArgs:\n    node-labels: \"ingress-ready=true\"\n"
       ]
-
-      extra_port_mappings {
-        container_port = 80
-        host_port      = 8080
-      }
-      extra_port_mappings {
-        container_port = 443
-        host_port      = 8443
-      }
     }
+
     node {
       role = "worker"
 
@@ -79,105 +75,133 @@ resource "kind_cluster" "kindle" {
 
 # set up the TF kubernetes provider
 provider "kubernetes" {
-  config_path    = "./kindle-config"
-  config_context = "kind-kindle"
-}
-
-provider "kubectl" {
-  config_path = "./kindle-config"
+  config_path    = local.k8s_config_path
+  config_context = "kind-kindling"
 }
 
 provider "helm" {
   kubernetes {
-    config_path = "./kindle-config"
+    config_path = kind_cluster.this.kubeconfig_path
   }
 }
 
 resource "helm_release" "cert_manager" {
-  chart      = "cert-manager"
-  repository = "https://charts.jetstack.io"
-  name       = "cert-manager"
-
-  create_namespace = "true"
+  name             = "cert-manager"
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
   namespace        = "cert-manager"
-
-  timeout = 900
+  timeout          = 900
+  atomic           = "true"
+  create_namespace = true
+  depends_on       = [kind_cluster.this]
 
   set {
     name  = "installCRDs"
     value = "true"
   }
-
-  depends_on = [
-    kind_cluster.kindle
-  ]
 }
 
-resource "kubectl_manifest" "cluster_issuer" {
-  yaml_body = <<YAML
----
-# cert-issuer.yaml
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: test-selfsigned
-spec:
-  selfSigned: {} 
-YAML
-
-  depends_on = [
-    helm_release.cert_manager
-  ]
-}
+# removing cert-issuer since we're not deploying this to a cloud or remote network
 
 # config overrides from here: https://github.com/kubernetes-sigs/kind/issues/1693#issuecomment-1060872664
 resource "helm_release" "ingress_nginx" {
-  name = "ingress-nginx"
-
-  repository = "https://kubernetes.github.io/ingress-nginx"
-  chart      = "ingress-nginx"
-
-  create_namespace = "true"
+  name             = "ingress-nginx"
+  repository       = "https://kubernetes.github.io/ingress-nginx"
+  chart            = "ingress-nginx"
   namespace        = "ingress-nginx"
+  create_namespace = true
+  depends_on       = [kind_cluster.this]
 
   set {
     name = "controller.hostPort.enabled"
     value = "true"
   }
-  
+
   set {
-    name = "controller.service.type"
-    value = "NodePort"
+    name  = "controller.service.type"
+    value = "ClusterIP"
   }
 
-  wait = true
+  wait    = true
   timeout = 900
-
-  depends_on = [
-    kubectl_manifest.cluster_issuer
-  ]
 }
 
-# create a namespace for Argo
-resource "kubernetes_namespace" "argocd" {
-  metadata {
-    name = local.argocd_namespace
+resource "helm_release" "argo_cd" {
+  name             = "argo-cd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  namespace        = "argo-cd"
+  create_namespace = true
+  depends_on       = [kind_cluster.this]
+}
+
+# kubectl port-forward service/argo-cd-argocd-server -n argo-cd 8080:http
+
+#resource "kubernetes_ingress" "argo_cd" {
+#  metadata {
+#    name      = "argo-cd-ingress"
+#    namespace = "argo-cd"
+#  }
+#  spec {
+#    rule {
+#      host = local.argocd_domain
+#      http {
+#        path {
+#          backend {
+#            service_name = "argo-cd-server"
+#            service_port = "http"
+#          }
+#          path = "/"
+#        }
+#      }
+#    }
+#    tls {
+#      # Replace with the appropriate secret name if you have TLS configured
+#      secret_name = "argo-cd-server-tls"
+#      hosts = [local.argocd_domain]
+#    }
+#  }
+#  depends_on = [helm_release.argo_cd]
+#}
+
+resource "kubernetes_manifest" "argo_cd_ingress" {
+  manifest = {
+    "apiVersion" = "networking.k8s.io/v1"
+    "kind"       = "Ingress"
+    "metadata" = {
+      "name"      = "argo-cd-ingress"
+      "namespace" = "argo-cd"
+    }
+    "spec" = {
+      "rules" = [
+        {
+          "host" = local.argocd_domain
+          "http" = {
+            "paths" = [
+              {
+                "backend" = {
+                  "service" = {
+                    "name" = "argo-cd-argocd-server"
+                    "port" = {
+                      "name" = "http"
+                    }
+                  }
+                }
+                "path"       = "/"
+                "pathType"   = "Prefix"
+              },
+            ]
+          }
+        },
+      ]
+      "tls" = [
+        {
+          # Replace with the appropriate secret name if you have TLS configured
+          "secretName" = "argo-cd-server-tls"
+          "hosts"      = [local.argocd_domain]
+        },
+      ]
+    }
   }
-  depends_on = [
-    helm_release.ingress_nginx
-  ]
-}
-
-# install argocd with a module that leverages the official helm chart - https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd 
-module "argocd" {
-  source               = "aigisuk/argocd/kubernetes"
-  version              = "0.2.7"
-  namespace            = local.argocd_namespace
-  argocd_chart_version = "5.27.4"
-  timeout_seconds      = 900
-  admin_password       = "admin"
-  insecure             = "true"
-  depends_on = [
-    kubernetes_namespace.argocd
-  ]
+  depends_on = [helm_release.argo_cd]
 }
