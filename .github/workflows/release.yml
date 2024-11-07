@@ -1,32 +1,91 @@
-name: PR Validation
+name: Release
 
 on:
-  pull_request:
-    paths:
-      - '.github/release-notes/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., v1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a pre-release?'
+        required: true
+        type: boolean
+        default: false
 
 jobs:
-  validate-release-notes:
+  validate:
+    name: Validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate release notes format
+      # Verify version format
+      - name: Verify version format
         run: |
-          for file in .github/release-notes/*.md; do
-            filename=$(basename "$file")
-            version="${filename%.*}"
-            
-            # Check version format
-            if [[ ! $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Invalid version format in filename: $filename"
-              echo "Must be in format v1.0.0.md"
-              exit 1
-            fi
-            
-            # Check file content
-            if [ ! -s "$file" ]; then
-              echo "Release notes file is empty: $filename"
-              exit 1
-            fi
-          done
+          if [[ ! ${{ github.event.inputs.version }} =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version format. Must be in format v1.0.0"
+            exit 1
+          fi
+
+      # Check if release notes exist
+      - name: Check release notes
+        id: check-notes
+        run: |
+          if [ ! -f ".github/release-notes/${{ github.event.inputs.version }}.md" ]; then
+            echo "Release notes file .github/release-notes/${{ github.event.inputs.version }}.md not found"
+            exit 1
+          fi
+
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Create and push tag
+      - name: Create tag
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a ${{ github.event.inputs.version }} -m "Release ${{ github.event.inputs.version }}"
+          git push origin ${{ github.event.inputs.version }}
+
+      # Create release
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: ${{ github.event.inputs.version }}
+          body_path: .github/release-notes/${{ github.event.inputs.version }}.md
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Optional: Update version references
+  update-version:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # Update version references in files (if needed)
+      - name: Update version references
+        run: |
+          # Example: Update version in variables.tf
+          # sed -i "s/version = \".*\"/version = \"${{ github.event.inputs.version }}\"/g" variables.tf
+          
+          # Add more file updates as needed
+          echo "Updating version references..."
+
+      # Commit version updates
+      - name: Commit version updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "chore: update version references to ${{ github.event.inputs.version }}" || echo "No changes to commit"
+          git push origin main || echo "No changes to push"
