@@ -43,8 +43,8 @@ output "monitoring_namespace" {
 output "dashboard_access_commands" {
   description = "Commands to access the dashboards"
   value = {
-    grafana = "kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring"
+    grafana    = "kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring"
     prometheus = "kubectl port-forward svc/prometheus-prometheus 9090:9090 -n monitoring"
-    argocd = "kubectl port-forward svc/argo-cd-argocd-server -n argo-cd 8080:443"
+    argocd     = "kubectl port-forward svc/argo-cd-argocd-server -n argo-cd 8080:443"
   }
 }

@@ -1,7 +1,7 @@
 # Define local variables for reuse throughout the configuration
 locals {
   k8s_config_path = pathexpand("~/.kube/config")
-  
+
   # Common labels for all resources
   common_labels = {
     environment = var.environment
@@ -54,14 +54,14 @@ resource "kind_cluster" "this" {
     networking {
       api_server_address = "127.0.0.1"
       api_server_port    = 6443
-      pod_subnet     = "10.244.0.0/16"
-      service_subnet = "10.96.0.0/16"
+      pod_subnet         = "10.244.0.0/16"
+      service_subnet     = "10.96.0.0/16"
     }
 
     # Control plane node configuration
     node {
       role = "control-plane"
-      
+
       # Mount local directory into node for persistence
       extra_mounts {
         host_path      = "./share"
@@ -112,7 +112,7 @@ resource "kind_cluster" "this" {
 # Configure Kubernetes provider to use the Kind cluster
 provider "kubernetes" {
   host = kind_cluster.this.endpoint
-  
+
   client_certificate     = kind_cluster.this.client_certificate
   client_key             = kind_cluster.this.client_key
   cluster_ca_certificate = kind_cluster.this.cluster_ca_certificate
@@ -122,7 +122,7 @@ provider "kubernetes" {
 provider "helm" {
   kubernetes {
     host = kind_cluster.this.endpoint
-    
+
     client_certificate     = kind_cluster.this.client_certificate
     client_key             = kind_cluster.this.client_key
     cluster_ca_certificate = kind_cluster.this.cluster_ca_certificate

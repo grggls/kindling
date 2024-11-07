@@ -1,7 +1,7 @@
 # Create monitoring namespace
 resource "kubernetes_namespace" "monitoring" {
   metadata {
-    name = "monitoring"
+    name   = "monitoring"
     labels = local.common_labels
   }
   depends_on = [kind_cluster.this]
@@ -59,7 +59,7 @@ resource "helm_release" "ingress_nginx" {
         }
         resources = {
           requests = {
-            cpu = "100m"
+            cpu    = "100m"
             memory = "128Mi"
           }
         }
@@ -70,14 +70,14 @@ resource "helm_release" "ingress_nginx" {
 
 # Install Prometheus Stack
 resource "helm_release" "prometheus_stack" {
-  name             = "prometheus"
-  repository       = "https://prometheus-community.github.io/helm-charts"
-  chart            = "kube-prometheus-stack"
-  version          = "55.5.0"
-  namespace        = "monitoring"
-  timeout          = 900
-  atomic           = true
-  depends_on       = [kubernetes_namespace.monitoring]
+  name       = "prometheus"
+  repository = "https://prometheus-community.github.io/helm-charts"
+  chart      = "kube-prometheus-stack"
+  version    = "55.5.0"
+  namespace  = "monitoring"
+  timeout    = 900
+  atomic     = true
+  depends_on = [kubernetes_namespace.monitoring]
 
   values = [
     yamlencode({
@@ -85,16 +85,16 @@ resource "helm_release" "prometheus_stack" {
         labels = local.common_labels
       }
       grafana = {
-        enabled = true
+        enabled       = true
         adminPassword = var.grafana_admin_password
         persistence = {
           enabled = true
-          size = "10Gi"
+          size    = "10Gi"
         }
         sidecar = {
           dashboards = {
             enabled = true
-            label = "grafana_dashboard"
+            label   = "grafana_dashboard"
           }
         }
       }
@@ -104,7 +104,7 @@ resource "helm_release" "prometheus_stack" {
           resources = {
             requests = {
               memory = "512Mi"
-              cpu = "500m"
+              cpu    = "500m"
             }
           }
           storage = {
@@ -149,12 +149,12 @@ resource "helm_release" "loki_stack" {
   namespace        = "monitoring"
   create_namespace = true
   timeout          = 900
-  
+
   # Add atomic to ensure rollback on failure
-  atomic          = true
-  
+  atomic = true
+
   # Wait for cert-manager to be fully ready
-  depends_on       = [
+  depends_on = [
     kubernetes_namespace.monitoring,
     helm_release.cert_manager,
     # Add explicit wait for cert-manager webhook
@@ -170,38 +170,38 @@ resource "helm_release" "loki_stack" {
         enabled = true
         persistence = {
           enabled = true
-          size = var.monitoring_storage_size
+          size    = var.monitoring_storage_size
         }
         config = {
           limits_config = {
-            enforce_metric_name = false
-            reject_old_samples = true
-            reject_old_samples_max_age = "168h"
+            enforce_metric_name           = false
+            reject_old_samples            = true
+            reject_old_samples_max_age    = "168h"
             max_cache_freshness_per_query = "10m"
           }
           table_manager = {
             retention_deletes_enabled = true
-            retention_period = "168h"
+            retention_period          = "168h"
           }
           ingester = {
-            chunk_idle_period = "1h"
-            chunk_block_size = 262144
+            chunk_idle_period   = "1h"
+            chunk_block_size    = 262144
             chunk_retain_period = "30s"
-            max_chunk_age = "1h"
+            max_chunk_age       = "1h"
             lifecycler = {
               ring = {
-                replication_factor = 1  # Reduced for Kind
+                replication_factor = 1 # Reduced for Kind
               }
             }
           }
         }
         resources = {
           requests = {
-            cpu = "100m"
+            cpu    = "100m"
             memory = "128Mi"
           }
           limits = {
-            cpu = "200m"
+            cpu    = "200m"
             memory = "256Mi"
           }
         }
@@ -210,11 +210,11 @@ resource "helm_release" "loki_stack" {
         enabled = true
         resources = {
           requests = {
-            cpu = "50m"
+            cpu    = "50m"
             memory = "64Mi"
           }
           limits = {
-            cpu = "100m"
+            cpu    = "100m"
             memory = "128Mi"
           }
         }
@@ -222,16 +222,16 @@ resource "helm_release" "loki_stack" {
           snippets = {
             extraRelabelConfigs = [
               {
-                action = "replace"
+                action       = "replace"
                 sourceLabels = ["__meta_kubernetes_pod_node_name"]
-                targetLabel = "node_name"
+                targetLabel  = "node_name"
               }
             ]
           }
         }
       }
       grafana = {
-        enabled = false  # Using Prometheus Stack's Grafana
+        enabled = false # Using Prometheus Stack's Grafana
       }
     })
   ]
@@ -239,7 +239,7 @@ resource "helm_release" "loki_stack" {
 
 # Add explicit wait for cert-manager webhook
 resource "time_sleep" "wait_for_cert_manager" {
-  depends_on = [helm_release.cert_manager]
+  depends_on      = [helm_release.cert_manager]
   create_duration = "30s"
 }
 
@@ -252,8 +252,8 @@ resource "helm_release" "opentelemetry_operator" {
   namespace        = "monitoring"
   create_namespace = true
   timeout          = 900
-  atomic          = true
-  depends_on       = [
+  atomic           = true
+  depends_on = [
     kubernetes_namespace.monitoring,
     helm_release.cert_manager,
     time_sleep.wait_for_cert_manager
@@ -266,22 +266,22 @@ resource "helm_release" "opentelemetry_operator" {
       }
       resources = {
         requests = {
-          cpu = "50m"
+          cpu    = "50m"
           memory = "64Mi"
         }
         limits = {
-          cpu = "100m"
+          cpu    = "100m"
           memory = "128Mi"
         }
       }
       webhook = {
         resources = {
           requests = {
-            cpu = "50m"
+            cpu    = "50m"
             memory = "64Mi"
           }
           limits = {
-            cpu = "100m"
+            cpu    = "100m"
             memory = "128Mi"
           }
         }
@@ -292,12 +292,12 @@ resource "helm_release" "opentelemetry_operator" {
 
 # Install Tempo
 resource "helm_release" "tempo" {
-  name             = "tempo"
-  repository       = "https://grafana.github.io/helm-charts"
-  chart            = "tempo"
-  version          = "1.7.1"
-  namespace        = "monitoring"
-  depends_on       = [kubernetes_namespace.monitoring]
+  name       = "tempo"
+  repository = "https://grafana.github.io/helm-charts"
+  chart      = "tempo"
+  version    = "1.7.1"
+  namespace  = "monitoring"
+  depends_on = [kubernetes_namespace.monitoring]
 
   values = [
     yamlencode({
@@ -317,7 +317,7 @@ resource "helm_release" "tempo" {
       }
       persistence = {
         enabled = true
-        size = var.monitoring_storage_size
+        size    = var.monitoring_storage_size
       }
     })
   ]
