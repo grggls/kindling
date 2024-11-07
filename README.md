@@ -39,19 +39,51 @@ A complete development environment using Kind (Kubernetes in Docker) with built-
    terraform apply
    ```
 
-3. Access the services:
+   If you encounter any timeout issues or need to cleanup a failed deployment:
    ```bash
-   # Grafana
+   # Clean up failed Helm releases
+   helm uninstall loki -n monitoring
+   
+   # Optional: Clean up monitoring namespace entirely
+   kubectl delete namespace monitoring
+   
+   # Then run terraform apply again
+   terraform apply
+   ```
+
+## Cluster Access
+
+After deployment, Terraform will output several useful endpoints and commands. View them with:
+```bash
+terraform output
+```
+
+### Accessing Services
+
+1. **Grafana**:
+   ```bash
    kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring
-   # Default credentials: admin/admin
+   ```
+   - URL: http://localhost:3000
+   - Default credentials: admin/admin
+   - Pre-configured dashboards are available in the dashboards menu
 
-   # ArgoCD
+2. **ArgoCD**:
+   ```bash
    kubectl port-forward svc/argo-cd-argocd-server -n argo-cd 8080:443
-   # Default credentials: admin/changeme
+   ```
+   - URL: https://localhost:8080
+   - Default credentials: admin/changeme
+   - Get admin password:
+     ```bash
+     kubectl -n argo-cd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+     ```
 
-   # Prometheus
+3. **Prometheus**:
+   ```bash
    kubectl port-forward svc/prometheus-prometheus 9090:9090 -n monitoring
    ```
+   - URL: http://localhost:9090
 
 ## Monitoring Stack
 
@@ -101,44 +133,199 @@ The Grafana instance comes with three pre-configured dashboards:
 
 Access the dashboards through Grafana at `http://localhost:3000` after port forwarding.
 
+## Working with the Cluster
+
+1. **Accessing the Kubernetes Dashboard**:
+   ```bash
+   # Create an admin service account
+   kubectl create serviceaccount cluster-admin-dashboard-sa
+   kubectl create clusterrolebinding cluster-admin-dashboard-sa \
+     --clusterrole=cluster-admin \
+     --serviceaccount=default:cluster-admin-dashboard-sa
+   
+   # Get the token
+   kubectl get secret $(kubectl get serviceaccount cluster-admin-dashboard-sa -o jsonpath="{.secrets[0].name}") \
+     -o jsonpath="{.data.token}" | base64 -d
+   ```
+
+2. **Working with Secrets**:
+   ```bash
+   # Create a secret
+   kubectl create secret generic my-secret \
+     --from-literal=key1=supersecret \
+     --namespace=my-namespace
+
+   # View secrets
+   kubectl get secrets -n my-namespace
+   
+   # Decode a secret
+   kubectl get secret my-secret -n my-namespace -o jsonpath="{.data.key1}" | base64 -d
+   ```
+
+3. **Deploying Applications**:
+   
+   Using kubectl:
+   ```bash
+   # Deploy a sample application
+   kubectl create deployment nginx --image=nginx
+   kubectl expose deployment nginx --port=80 --type=ClusterIP
+   
+   # Access the application
+   kubectl port-forward svc/nginx 8080:80
+   ```
+
+   Using ArgoCD:
+   ```bash
+   # Create an application in ArgoCD
+   argocd app create my-app \
+     --repo https://github.com/my-org/my-repo.git \
+     --path kubernetes \
+     --dest-server https://kubernetes.default.svc \
+     --dest-namespace my-namespace
+   
+   # Sync the application
+   argocd app sync my-app
+   ```
+
+4. **Viewing Logs**:
+   ```bash
+   # View logs for a pod
+   kubectl logs -f pod-name -n namespace
+   
+   # View logs in Grafana/Loki
+   # After port-forwarding Grafana:
+   # 1. Go to Explore
+   # 2. Select Loki datasource
+   # 3. Use LogQL queries, e.g.:
+   #    {namespace="monitoring"}
+   ```
+
+5. **Managing Resources**:
+   ```bash
+   # View resource usage
+   kubectl top nodes
+   kubectl top pods -A
+   
+   # View pod status
+   kubectl get pods -A -o wide
+   
+   # Describe resources for troubleshooting
+   kubectl describe pod pod-name -n namespace
+   kubectl describe node node-name
+   ```
+
+### Adding Custom Services
+
+1. **Using Helm**:
+   ```bash
+   # Add a helm repository
+   helm repo add bitnami https://charts.bitnami.com/bitnami
+   helm repo update
+   
+   # Install a chart
+   helm install my-release bitnami/postgresql \
+     --namespace my-namespace \
+     --create-namespace \
+     --set persistence.enabled=false
+   ```
+
+2. **Using ArgoCD**:
+   Create an Application manifest:
+   ```yaml
+   apiVersion: argoproj.io/v1alpha1
+   kind: Application
+   metadata:
+     name: my-app
+     namespace: argo-cd
+   spec:
+     project: default
+     source:
+       repoURL: https://github.com/my-org/my-repo.git
+       targetRevision: HEAD
+       path: k8s
+     destination:
+       server: https://kubernetes.default.svc
+       namespace: my-namespace
+     syncPolicy:
+       automated:
+         prune: true
+         selfHeal: true
+   ```
+
 ## Configuration
 
 Main configuration variables can be adjusted in `variables.tf`:
-- `kubernetes_version`: Kubernetes version for the Kind cluster
-- `argocd_domain`: Domain for ArgoCD ingress
-- `grafana_admin_password`: Initial Grafana admin password
-- `environment`: Environment name
-- `project_name`: Project name
+- `kubernetes_version`: Kubernetes version for the Kind cluster (default: "1.31.0")
+- `argocd_domain`: Domain for ArgoCD ingress (default: "argocd.local")
+- `grafana_admin_password`: Initial Grafana admin password (default: "admin")
+- `environment`: Environment name (default: "development")
+- `project_name`: Project name (default: "kindling")
+- `monitoring_storage_size`: Storage size for monitoring components (default: "10Gi")
+- `node_count`: Number of worker nodes (default: 2)
 
 ## Project Structure
 
 ```
 .
-├── main.tf                # Core cluster configuration
-├── variables.tf           # Variable definitions
-├── outputs.tf            # Output definitions
-├── monitoring.tf         # Monitoring stack configuration
-├── argocd.tf            # ArgoCD configuration
-├── dashboards.tf         # Grafana dashboard configurations
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                # CI workflow
+│       └── release.yml           # Release workflow
+├── main.tf                       # Core cluster configuration
+├── variables.tf                  # Variable definitions
+├── outputs.tf                    # Output definitions
+├── versions.tf                   # Version constraints
+├── monitoring.tf                 # Monitoring stack configuration
+├── argocd.tf                     # ArgoCD configuration
+├── dashboards.tf                 # Grafana dashboard configurations
 ├── dashboards/
 │   ├── cluster-dashboard-part1.json   # Basic metrics
 │   ├── cluster-dashboard-part2.json   # Resource usage
 │   ├── cluster-dashboard-part3.json   # Network & storage
 │   └── argocd-dashboard.json         # ArgoCD metrics
+├── .tflint.hcl                  # TFLint configuration
+├── .gitignore
+├── CHANGELOG.md
 └── README.md
 ```
 
-## Day 2 Operations
+## Development vs Production Use
 
-- Scale worker nodes by adjusting the range in the `dynamic "node"` block
-- Update dashboards by modifying JSON files in the `dashboards` directory
-- Add custom monitoring by extending the Prometheus configuration
-- Configure GitOps workflows through ArgoCD
-- Add additional Helm charts through Terraform or ArgoCD
+This configuration is optimized for local development and testing:
+
+- Persistence is disabled for Loki to improve startup time
+- Resource requests and limits are set low for local machine constraints
+- Authentication is simplified for easier access
+- Single-node configurations are used where possible
+
+For production use, you would want to:
+1. Enable persistence for all components
+2. Adjust resource requests and limits appropriately
+3. Enable proper authentication
+4. Configure proper backup and retention policies
+5. Use proper SSL certificates instead of self-signed
+6. Configure proper ingress with real domain names
 
 ## Contributing
 
-Feel free to open issues or pull requests for improvements.
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run the lint checks:
+   ```bash
+   tflint
+   terraform fmt -check -recursive
+   ```
+5. Create a Pull Request
+
+The CI pipeline will verify:
+- Terraform formatting
+- Terraform validation
+- TFLint checks
+- JSON formatting
+- Security scanning with TFSec and Checkov
 
 ## References
 
