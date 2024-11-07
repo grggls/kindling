@@ -252,6 +252,71 @@ Access the dashboards through Grafana at `http://localhost:3000` after port forw
          selfHeal: true
    ```
 
+## Logging with Promtail and Loki
+
+The cluster uses Promtail to collect logs from all pods and ships them to Loki. This setup provides:
+
+### Features
+- Automatic log collection from all containers
+- Label-based log querying
+- Metadata enrichment (namespace, pod name, node name)
+- Low resource footprint (10m CPU, 32Mi memory requests)
+
+### Viewing Logs
+You can view logs in several ways:
+
+1. **Through Grafana**:
+   ```bash
+   kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring
+   ```
+   Then:
+   - Navigate to Explore
+   - Select Loki as the data source
+   - Use LogQL queries, for example:
+     ```
+     {namespace="monitoring"}              # All logs from monitoring namespace
+     {namespace="argo-cd"}                 # All ArgoCD logs
+     {namespace="monitoring"} |= "error"   # Filter for error messages
+     ```
+
+2. **Using kubectl** (for comparison):
+   ```bash
+   # View logs for a specific pod
+   kubectl logs -f <pod-name> -n <namespace>
+   
+   # View logs for a specific container in a pod
+   kubectl logs -f <pod-name> -c <container-name> -n <namespace>
+   ```
+
+### LogQL Examples
+Loki uses LogQL for querying. Here are some useful queries:
+
+```logql
+# Show all logs from a specific namespace
+{namespace="monitoring"}
+
+# Filter for error logs across all namespaces
+{namespace=~".+"} |= "error"
+
+# Show logs from specific application pods
+{namespace="monitoring", app="prometheus"}
+
+# Show logs and parse JSON
+{namespace="monitoring"} | json
+
+# Count error occurrences by namespace
+count_over_time({namespace=~".+", level="error"}[1h]) by (namespace)
+```
+
+### Configuration
+Promtail is configured via the Helm chart with:
+- Node tolerations to run on all cluster nodes
+- Resource limits to ensure stable operation
+- Automatic Kubernetes metadata labeling
+- Direct connection to Loki service
+
+For custom configurations, modify the `promtail` section in the `loki_stack` Helm release in `monitoring.tf`.
+
 ## Configuration
 
 Main configuration variables can be adjusted in `variables.tf`:

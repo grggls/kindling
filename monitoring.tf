@@ -140,7 +140,7 @@ resource "helm_release" "prometheus_stack" {
   ]
 }
 
-# Install Loki Stack with adjusted configuration
+# Install Loki Stack with Promtail enabled
 resource "helm_release" "loki_stack" {
   name             = "loki"
   repository       = "https://grafana.github.io/helm-charts"
@@ -149,14 +149,15 @@ resource "helm_release" "loki_stack" {
   namespace        = "monitoring"
   create_namespace = true
   timeout          = 300
-  atomic          = true
-  force_update    = true
-  cleanup_on_fail = true
-  
-  depends_on       = [
+  atomic           = true
+  force_update     = true
+  cleanup_on_fail  = true
+
+  depends_on = [
     kubernetes_namespace.monitoring
   ]
 
+  # Loki configuration (keeping the working part)
   set {
     name  = "loki.enabled"
     value = "true"
@@ -172,11 +173,76 @@ resource "helm_release" "loki_stack" {
     value = "false"
   }
 
+  # Re-enable Promtail with adjusted probes
   set {
     name  = "promtail.enabled"
-    value = "false"  # Disable promtail temporarily until Loki is working
+    value = "true"
   }
 
+  # Adjust Promtail readiness probe
+  set {
+    name  = "promtail.readinessProbe.initialDelaySeconds"
+    value = "45"
+  }
+
+  set {
+    name  = "promtail.readinessProbe.timeoutSeconds"
+    value = "2"
+  }
+
+  set {
+    name  = "promtail.readinessProbe.periodSeconds"
+    value = "15"
+  }
+
+  set {
+    name  = "promtail.readinessProbe.failureThreshold"
+    value = "10"
+  }
+
+  # Adjust Promtail liveness probe
+  set {
+    name  = "promtail.livenessProbe.initialDelaySeconds"
+    value = "45"
+  }
+
+  set {
+    name  = "promtail.livenessProbe.timeoutSeconds"
+    value = "2"
+  }
+
+  set {
+    name  = "promtail.livenessProbe.periodSeconds"
+    value = "15"
+  }
+
+  set {
+    name  = "promtail.livenessProbe.failureThreshold"
+    value = "10"
+  }
+
+  # Minimal resources
+  set {
+    name  = "promtail.resources.requests.cpu"
+    value = "10m"
+  }
+
+  set {
+    name  = "promtail.resources.requests.memory"
+    value = "32Mi"
+  }
+
+  set {
+    name  = "promtail.resources.limits.cpu"
+    value = "20m"
+  }
+
+  set {
+    name  = "promtail.resources.limits.memory"
+    value = "64Mi"
+  }
+
+  # Keep the working Loki configuration
   set {
     name  = "loki.readinessProbe.initialDelaySeconds"
     value = "30"

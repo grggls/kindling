@@ -22,6 +22,7 @@ resource "kubernetes_config_map" "cluster_dashboards" {
     "cluster-dashboard-basic.json"     = file("${path.module}/dashboards/cluster-dashboard-part1.json")
     "cluster-dashboard-resources.json" = file("${path.module}/dashboards/cluster-dashboard-part2.json")
     "cluster-dashboard-network.json"   = file("${path.module}/dashboards/cluster-dashboard-part3.json")
+    "logging-dashboard.json"           = file("${path.module}/dashboards/logging-dashboard.json")
   }
 
   depends_on = [
