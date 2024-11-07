@@ -2,7 +2,6 @@
 locals {
   k8s_config_path    = pathexpand("~/.kube/config")  # Expand ~ to full home directory path
   kubernetes_version = "1.31.0"                       # Kind node version to use
-  argocd_namespace   = "argocd"                      # Namespace for ArgoCD installation
   argocd_domain      = "argocd.local"                # Domain for ArgoCD ingress
 
   # Common labels for all resources

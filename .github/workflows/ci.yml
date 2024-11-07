@@ -13,7 +13,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.0.0
+          terraform_version: "1.5.0"  # Updated to match required version
           terraform_wrapper: false
 
       - name: Terraform Format
@@ -94,6 +94,8 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.0"  # Added version specification for consistency
 
       - name: Check for provider updates
         run: |
