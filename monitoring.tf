@@ -7,7 +7,7 @@ resource "kubernetes_namespace" "monitoring" {
   depends_on = [kind_cluster.this]
 }
 
-# Install cert-manager
+# Install cert-manager for SSL certificate management
 resource "helm_release" "cert_manager" {
   name             = "cert-manager"
   repository       = "https://charts.jetstack.io"
@@ -141,6 +141,7 @@ resource "helm_release" "prometheus_stack" {
 }
 
 # Install Loki Stack with adjusted configuration
+# Install Loki Stack with minimal configuration for Kind
 resource "helm_release" "loki_stack" {
   name             = "loki"
   repository       = "https://grafana.github.io/helm-charts"
@@ -149,15 +150,13 @@ resource "helm_release" "loki_stack" {
   namespace        = "monitoring"
   create_namespace = true
   timeout          = 900
+  atomic           = true
+  force_update     = true
+  cleanup_on_fail  = true
 
-  # Add atomic to ensure rollback on failure
-  atomic = true
-
-  # Wait for cert-manager to be fully ready
   depends_on = [
     kubernetes_namespace.monitoring,
     helm_release.cert_manager,
-    # Add explicit wait for cert-manager webhook
     time_sleep.wait_for_cert_manager
   ]
 
@@ -169,40 +168,61 @@ resource "helm_release" "loki_stack" {
       loki = {
         enabled = true
         persistence = {
-          enabled = true
-          size    = var.monitoring_storage_size
+          enabled = false # Disable persistence for testing
         }
         config = {
+          auth_enabled = false # Disable auth for testing
+          ingester = {
+            chunk_idle_period   = "15m"
+            chunk_retain_period = "30s"
+            lifecycler = {
+              ring = {
+                replication_factor = 1
+                kvstore = {
+                  store = "inmemory" # Use inmemory instead of filesystem
+                }
+              }
+            }
+          }
+          schema_config = {
+            configs = [{
+              from         = "2020-05-15"
+              store        = "boltdb-shipper"
+              object_store = "filesystem"
+              schema       = "v11"
+              index = {
+                prefix = "index_"
+                period = "24h"
+              }
+            }]
+          }
+          storage_config = {
+            boltdb_shipper = {
+              active_index_directory = "/tmp/loki/boltdb-shipper-active"
+              cache_location         = "/tmp/loki/boltdb-shipper-cache"
+              cache_ttl              = "24h"
+              shared_store           = "filesystem"
+            }
+            filesystem = {
+              directory = "/tmp/loki/chunks"
+            }
+          }
           limits_config = {
             enforce_metric_name           = false
             reject_old_samples            = true
             reject_old_samples_max_age    = "168h"
             max_cache_freshness_per_query = "10m"
-          }
-          table_manager = {
-            retention_deletes_enabled = true
-            retention_period          = "168h"
-          }
-          ingester = {
-            chunk_idle_period   = "1h"
-            chunk_block_size    = 262144
-            chunk_retain_period = "30s"
-            max_chunk_age       = "1h"
-            lifecycler = {
-              ring = {
-                replication_factor = 1 # Reduced for Kind
-              }
-            }
+            split_queries_by_interval     = "15m"
           }
         }
         resources = {
           requests = {
-            cpu    = "100m"
-            memory = "128Mi"
+            cpu    = "50m"  # Reduced CPU request
+            memory = "64Mi" # Reduced memory request
           }
           limits = {
-            cpu    = "200m"
-            memory = "256Mi"
+            cpu    = "100m"  # Reduced CPU limit
+            memory = "128Mi" # Reduced memory limit
           }
         }
       }
@@ -210,12 +230,12 @@ resource "helm_release" "loki_stack" {
         enabled = true
         resources = {
           requests = {
-            cpu    = "50m"
-            memory = "64Mi"
+            cpu    = "25m"  # Minimal CPU request
+            memory = "32Mi" # Minimal memory request
           }
           limits = {
-            cpu    = "100m"
-            memory = "128Mi"
+            cpu    = "50m"  # Minimal CPU limit
+            memory = "64Mi" # Minimal memory limit
           }
         }
         config = {
@@ -229,9 +249,22 @@ resource "helm_release" "loki_stack" {
             ]
           }
         }
+        tolerations = [{
+          operator = "Exists"
+        }]
       }
       grafana = {
         enabled = false # Using Prometheus Stack's Grafana
+      }
+      # Disable unnecessary components
+      fluent-bit = {
+        enabled = false
+      }
+      logstash = {
+        enabled = false
+      }
+      filebeat = {
+        enabled = false
       }
     })
   ]

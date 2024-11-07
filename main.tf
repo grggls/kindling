@@ -10,26 +10,6 @@ locals {
   }
 }
 
-# Specify required providers and their versions
-terraform {
-  required_version = ">= 1.5" # Ensure minimum Terraform version
-
-  required_providers {
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "2.33"
-    }
-    kind = {
-      source  = "tehcyx/kind"
-      version = "0.6"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = ">= 2.16"
-    }
-  }
-}
-
 # Configure the Kind provider
 provider "kind" {}
 
@@ -129,86 +109,6 @@ provider "helm" {
   }
 }
 
-# Install cert-manager for SSL certificate management
-resource "helm_release" "cert_manager" {
-  name             = "cert-manager"
-  repository       = "https://charts.jetstack.io"
-  chart            = "cert-manager"
-  version          = "v1.14.0" # Specify version for stability
-  namespace        = "cert-manager"
-  timeout          = 900
-  atomic           = true
-  create_namespace = true
-  depends_on       = [kind_cluster.this]
-
-  set {
-    name  = "installCRDs"
-    value = "true"
-  }
-
-  # Add monitoring
-  set {
-    name  = "prometheus.enabled"
-    value = "true"
-  }
-
-  values = [
-    yamlencode({
-      global = {
-        labels = local.common_labels
-      }
-    })
-  ]
-}
-
-# Install NGINX ingress controller
-resource "helm_release" "ingress_nginx" {
-  name             = "ingress-nginx"
-  repository       = "https://kubernetes.github.io/ingress-nginx"
-  chart            = "ingress-nginx"
-  version          = "4.9.0" # Specify version for stability
-  namespace        = "ingress-nginx"
-  create_namespace = true
-  depends_on       = [kind_cluster.this]
-
-  set {
-    name  = "controller.hostPort.enabled"
-    value = "true"
-  }
-
-  set {
-    name  = "controller.service.type"
-    value = "ClusterIP"
-  }
-
-  # Enable metrics for monitoring
-  set {
-    name  = "controller.metrics.enabled"
-    value = "true"
-  }
-
-  # Add resource limits
-  set {
-    name  = "controller.resources.requests.cpu"
-    value = "100m"
-  }
-  set {
-    name  = "controller.resources.requests.memory"
-    value = "128Mi"
-  }
-
-  wait    = true
-  timeout = 900
-
-  values = [
-    yamlencode({
-      global = {
-        labels = local.common_labels
-      }
-    })
-  ]
-}
-
 # Install ArgoCD
 resource "helm_release" "argo_cd" {
   name             = "argo-cd"
@@ -249,59 +149,47 @@ resource "helm_release" "argo_cd" {
 # Configure ArgoCD Ingress
 resource "kubernetes_manifest" "argo_cd_ingress" {
   manifest = {
-    "apiVersion" = "networking.k8s.io/v1"
-    "kind"       = "Ingress"
-    "metadata" = {
-      "name"      = "argo-cd-ingress"
-      "namespace" = "argo-cd"
-      "annotations" = {
+    apiVersion = "networking.k8s.io/v1"
+    kind       = "Ingress"
+    metadata = {
+      name      = "argo-cd-ingress"
+      namespace = "argo-cd"
+      annotations = {
         "nginx.ingress.kubernetes.io/ssl-passthrough"  = "true"
         "nginx.ingress.kubernetes.io/backend-protocol" = "HTTPS"
       }
-      "labels" = local.common_labels
+      labels = local.common_labels
     }
-    "spec" = {
-      "ingressClassName" = "nginx"
-      "rules" = [
+    spec = {
+      ingressClassName = "nginx"
+      rules = [
         {
-          "host" = local.argocd_domain
-          "http" = {
-            "paths" = [
+          host = var.argocd_domain # Changed from local.argocd_domain
+          http = {
+            paths = [
               {
-                "backend" = {
-                  "service" = {
-                    "name" = "argo-cd-argocd-server"
-                    "port" = {
-                      "name" = "http"
+                backend = {
+                  service = {
+                    name = "argo-cd-argocd-server"
+                    port = {
+                      name = "http"
                     }
                   }
                 }
-                "path"     = "/"
-                "pathType" = "Prefix"
+                path     = "/"
+                pathType = "Prefix"
               },
             ]
           }
         },
       ]
-      "tls" = [
+      tls = [
         {
-          "secretName" = "argo-cd-server-tls"
-          "hosts"      = [local.argocd_domain]
+          secretName = "argo-cd-server-tls"
+          hosts      = [var.argocd_domain] # Changed from local.argocd_domain
         },
       ]
     }
   }
   depends_on = [helm_release.argo_cd, helm_release.ingress_nginx]
-}
-
-# Output useful information
-output "cluster_endpoint" {
-  description = "Endpoint for the Kind cluster"
-  value       = kind_cluster.this.endpoint
-}
-
-output "argocd_admin_password" {
-  description = "Initial admin password for ArgoCD"
-  value       = "changeme"
-  sensitive   = true
 }
