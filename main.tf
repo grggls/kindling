@@ -1,9 +1,8 @@
 # Define local variables for reuse throughout the configuration
 locals {
-  k8s_config_path    = pathexpand("~/.kube/config")  # Expand ~ to full home directory path
-  kubernetes_version = "1.31.0"                       # Kind node version to use
-  argocd_namespace   = "argocd"                      # Namespace for ArgoCD installation
-  argocd_domain      = "argocd.local"                # Domain for ArgoCD ingress
+  k8s_config_path    = pathexpand("~/.kube/config") # Expand ~ to full home directory path
+  kubernetes_version = "1.31.0"                     # Kind node version to use
+  argocd_domain      = "argocd.local"               # Domain for ArgoCD ingress
 
   # Common labels for all resources
   common_labels = {
@@ -15,7 +14,7 @@ locals {
 
 # Specify required providers and their versions
 terraform {
-  required_version = ">= 1.5"  # Ensure minimum Terraform version
+  required_version = ">= 1.5" # Ensure minimum Terraform version
 
   required_providers {
     kubernetes = {
@@ -82,19 +81,19 @@ resource "kind_cluster" "this" {
       # Optional: Set resource limits
       extra_port_mappings {
         container_port = 80
-        host_port     = 80
-        protocol      = "TCP"
+        host_port      = 80
+        protocol       = "TCP"
       }
       extra_port_mappings {
         container_port = 443
-        host_port     = 443
-        protocol      = "TCP"
+        host_port      = 443
+        protocol       = "TCP"
       }
     }
 
     # Worker nodes configuration
     dynamic "node" {
-      for_each = range(2)  # Create 2 worker nodes
+      for_each = range(2) # Create 2 worker nodes
       content {
         role = "worker"
         # Optional: Add labels to worker nodes
@@ -122,7 +121,7 @@ provider "kubernetes" {
   host = kind_cluster.this.endpoint
 
   client_certificate     = kind_cluster.this.client_certificate
-  client_key            = kind_cluster.this.client_key
+  client_key             = kind_cluster.this.client_key
   cluster_ca_certificate = kind_cluster.this.cluster_ca_certificate
 
   # Add timeout for operations
@@ -137,7 +136,7 @@ provider "helm" {
     host = kind_cluster.this.endpoint
 
     client_certificate     = kind_cluster.this.client_certificate
-    client_key            = kind_cluster.this.client_key
+    client_key             = kind_cluster.this.client_key
     cluster_ca_certificate = kind_cluster.this.cluster_ca_certificate
   }
 }
@@ -147,7 +146,7 @@ resource "helm_release" "cert_manager" {
   name             = "cert-manager"
   repository       = "https://charts.jetstack.io"
   chart            = "cert-manager"
-  version          = "v1.14.0"  # Specify version for stability
+  version          = "v1.14.0" # Specify version for stability
   namespace        = "cert-manager"
   timeout          = 900
   atomic           = true
@@ -179,7 +178,7 @@ resource "helm_release" "ingress_nginx" {
   name             = "ingress-nginx"
   repository       = "https://kubernetes.github.io/ingress-nginx"
   chart            = "ingress-nginx"
-  version          = "4.9.0"  # Specify version for stability
+  version          = "4.9.0" # Specify version for stability
   namespace        = "ingress-nginx"
   create_namespace = true
   depends_on       = [kind_cluster.this]
@@ -227,7 +226,7 @@ resource "helm_release" "argo_cd" {
   name             = "argo-cd"
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
-  version          = "5.51.6"  # Specify version for stability
+  version          = "5.51.6" # Specify version for stability
   namespace        = "argo-cd"
   create_namespace = true
   depends_on       = [kind_cluster.this]
@@ -252,7 +251,7 @@ resource "helm_release" "argo_cd" {
       configs = {
         secret = {
           # Enable additional security features
-          argocdServerAdminPassword = bcrypt("changeme")  # Change this in production
+          argocdServerAdminPassword = bcrypt("changeme") # Change this in production
         }
       }
     })
@@ -268,7 +267,7 @@ resource "kubernetes_manifest" "argo_cd_ingress" {
       "name"      = "argo-cd-ingress"
       "namespace" = "argo-cd"
       "annotations" = {
-        "nginx.ingress.kubernetes.io/ssl-passthrough" = "true"
+        "nginx.ingress.kubernetes.io/ssl-passthrough"  = "true"
         "nginx.ingress.kubernetes.io/backend-protocol" = "HTTPS"
       }
       "labels" = local.common_labels
