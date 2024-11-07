@@ -129,14 +129,26 @@ resource "helm_release" "prometheus_stack" {
   ]
 }
 
-# Install Loki Stack
+# Install Loki Stack with adjusted configuration
 resource "helm_release" "loki_stack" {
   name             = "loki"
   repository       = "https://grafana.github.io/helm-charts"
   chart            = "loki-stack"
   version          = "2.9.11"
   namespace        = "monitoring"
-  depends_on       = [kubernetes_namespace.monitoring]
+  create_namespace = true
+  timeout          = 900
+  
+  # Add atomic to ensure rollback on failure
+  atomic          = true
+  
+  # Wait for cert-manager to be fully ready
+  depends_on       = [
+    kubernetes_namespace.monitoring,
+    helm_release.cert_manager,
+    # Add explicit wait for cert-manager webhook
+    time_sleep.wait_for_cert_manager
+  ]
 
   values = [
     yamlencode({
@@ -147,11 +159,54 @@ resource "helm_release" "loki_stack" {
         enabled = true
         persistence = {
           enabled = true
-          size = "10Gi"
+          size = "5Gi"  # Reduced from 10Gi for Kind
+        }
+        config = {
+          limits_config = {
+            enforce_metric_name = false
+            reject_old_samples = true
+            reject_old_samples_max_age = "168h"
+            max_cache_freshness_per_query = "10m"
+          }
+          table_manager = {
+            retention_deletes_enabled = true
+            retention_period = "168h"
+          }
+          ingester = {
+            chunk_idle_period = "1h"
+            chunk_block_size = 262144
+            chunk_retain_period = "30s"
+            max_chunk_age = "1h"
+            lifecycler = {
+              ring = {
+                replication_factor = 1  # Reduced for Kind
+              }
+            }
+          }
+        }
+        resources = {
+          requests = {
+            cpu = "100m"
+            memory = "128Mi"
+          }
+          limits = {
+            cpu = "200m"
+            memory = "256Mi"
+          }
         }
       }
       promtail = {
         enabled = true
+        resources = {
+          requests = {
+            cpu = "50m"
+            memory = "64Mi"
+          }
+          limits = {
+            cpu = "100m"
+            memory = "128Mi"
+          }
+        }
         config = {
           snippets = {
             extraRelabelConfigs = [
@@ -165,25 +220,60 @@ resource "helm_release" "loki_stack" {
         }
       }
       grafana = {
-        enabled = false
+        enabled = false  # Using Prometheus Stack's Grafana
       }
     })
   ]
 }
 
-# Install OpenTelemetry Operator
+# Add explicit wait for cert-manager webhook
+resource "time_sleep" "wait_for_cert_manager" {
+  depends_on = [helm_release.cert_manager]
+  create_duration = "30s"
+}
+
+# Install OpenTelemetry Operator with adjusted configuration
 resource "helm_release" "opentelemetry_operator" {
   name             = "opentelemetry-operator"
   repository       = "https://open-telemetry.github.io/opentelemetry-helm-charts"
   chart            = "opentelemetry-operator"
   version          = "0.45.0"
   namespace        = "monitoring"
-  depends_on       = [kubernetes_namespace.monitoring]
+  create_namespace = true
+  timeout          = 900
+  atomic          = true
+  depends_on       = [
+    kubernetes_namespace.monitoring,
+    helm_release.cert_manager,
+    time_sleep.wait_for_cert_manager
+  ]
 
   values = [
     yamlencode({
       global = {
         labels = local.common_labels
+      }
+      resources = {
+        requests = {
+          cpu = "50m"
+          memory = "64Mi"
+        }
+        limits = {
+          cpu = "100m"
+          memory = "128Mi"
+        }
+      }
+      webhook = {
+        resources = {
+          requests = {
+            cpu = "50m"
+            memory = "64Mi"
+          }
+          limits = {
+            cpu = "100m"
+            memory = "128Mi"
+          }
+        }
       }
     })
   ]
