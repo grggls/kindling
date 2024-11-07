@@ -1,9 +1,7 @@
 # Define local variables for reuse throughout the configuration
 locals {
-  k8s_config_path    = pathexpand("~/.kube/config") # Expand ~ to full home directory path
-  kubernetes_version = "1.31.0"                     # Kind node version to use
-  argocd_domain      = "argocd.local"               # Domain for ArgoCD ingress
-
+  k8s_config_path = pathexpand("~/.kube/config")
+  
   # Common labels for all resources
   common_labels = {
     environment = var.environment

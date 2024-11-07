@@ -107,6 +107,17 @@ resource "helm_release" "prometheus_stack" {
               cpu = "500m"
             }
           }
+          storage = {
+            volumeClaimTemplate = {
+              spec = {
+                resources = {
+                  requests = {
+                    storage = var.monitoring_storage_size
+                  }
+                }
+              }
+            }
+          }
         }
       }
       alertmanager = {
@@ -159,7 +170,7 @@ resource "helm_release" "loki_stack" {
         enabled = true
         persistence = {
           enabled = true
-          size = "5Gi"  # Reduced from 10Gi for Kind
+          size = var.monitoring_storage_size
         }
         config = {
           limits_config = {
@@ -306,7 +317,7 @@ resource "helm_release" "tempo" {
       }
       persistence = {
         enabled = true
-        size = "10Gi"
+        size = var.monitoring_storage_size
       }
     })
   ]
