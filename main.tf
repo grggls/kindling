@@ -6,9 +6,9 @@ locals {
 
   # Common labels for all resources
   common_labels = {
-    environment = "development"
+    environment = var.environment
     managed_by  = "terraform"
-    project     = "kindling"
+    project     = var.project_name
   }
 }
 
@@ -37,8 +37,8 @@ provider "kind" {}
 
 # Create a Kind cluster with a control plane and two workers
 resource "kind_cluster" "this" {
-  name            = "kindling"
-  node_image      = "kindest/node:v${local.kubernetes_version}"
+  name            = var.project_name
+  node_image      = "kindest/node:v${var.kubernetes_version}"
   wait_for_ready  = true
   kubeconfig_path = local.k8s_config_path
 
@@ -56,17 +56,14 @@ resource "kind_cluster" "this" {
     networking {
       api_server_address = "127.0.0.1"
       api_server_port    = 6443
-      # Pod subnet configuration (optional)
       pod_subnet     = "10.244.0.0/16"
       service_subnet = "10.96.0.0/16"
-      # Uncomment when ready to install cilium
-      #disable_default_cni = true
     }
 
     # Control plane node configuration
     node {
       role = "control-plane"
-
+      
       # Mount local directory into node for persistence
       extra_mounts {
         host_path      = "./share"
@@ -78,7 +75,7 @@ resource "kind_cluster" "this" {
         "kind: InitConfiguration\nnodeRegistration:\n  kubeletExtraArgs:\n    node-labels: \"ingress-ready=true\"\n"
       ]
 
-      # Optional: Set resource limits
+      # Port mappings
       extra_port_mappings {
         container_port = 80
         host_port      = 80
@@ -93,10 +90,9 @@ resource "kind_cluster" "this" {
 
     # Worker nodes configuration
     dynamic "node" {
-      for_each = range(2) # Create 2 worker nodes
+      for_each = range(var.node_count)
       content {
         role = "worker"
-        # Optional: Add labels to worker nodes
         kubeadm_config_patches = [
           "kind: JoinConfiguration\nnodeRegistration:\n  kubeletExtraArgs:\n    node-labels: \"worker=true\"\n"
         ]
@@ -108,7 +104,6 @@ resource "kind_cluster" "this" {
       <<-TOML
         [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
           endpoint = ["http://kind-registry:5000"]
-        # Configure containerd to use insecure registries if needed
         [plugins."io.containerd.grpc.v1.cri".registry.configs."localhost:5000".tls]
           insecure_skip_verify = true
       TOML
@@ -119,22 +114,17 @@ resource "kind_cluster" "this" {
 # Configure Kubernetes provider to use the Kind cluster
 provider "kubernetes" {
   host = kind_cluster.this.endpoint
-
+  
   client_certificate     = kind_cluster.this.client_certificate
   client_key             = kind_cluster.this.client_key
   cluster_ca_certificate = kind_cluster.this.cluster_ca_certificate
-
-  # Add timeout for operations
-  experiments {
-    manifest_resource = true
-  }
 }
 
 # Configure Helm provider with the Kind cluster credentials
 provider "helm" {
   kubernetes {
     host = kind_cluster.this.endpoint
-
+    
     client_certificate     = kind_cluster.this.client_certificate
     client_key             = kind_cluster.this.client_key
     cluster_ca_certificate = kind_cluster.this.cluster_ca_certificate
