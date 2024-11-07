@@ -1,34 +1,12 @@
 # Define local variables for reuse throughout the configuration
 locals {
-  k8s_config_path    = pathexpand("~/.kube/config") # Expand ~ to full home directory path
-  kubernetes_version = "1.31.0"                     # Kind node version to use
-  argocd_domain      = "argocd.local"               # Domain for ArgoCD ingress
+  k8s_config_path = pathexpand("~/.kube/config")
 
   # Common labels for all resources
   common_labels = {
-    environment = "development"
+    environment = var.environment
     managed_by  = "terraform"
-    project     = "kindling"
-  }
-}
-
-# Specify required providers and their versions
-terraform {
-  required_version = ">= 1.5" # Ensure minimum Terraform version
-
-  required_providers {
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "2.33"
-    }
-    kind = {
-      source  = "tehcyx/kind"
-      version = "0.6"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = ">= 2.16"
-    }
+    project     = var.project_name
   }
 }
 
@@ -37,8 +15,8 @@ provider "kind" {}
 
 # Create a Kind cluster with a control plane and two workers
 resource "kind_cluster" "this" {
-  name            = "kindling"
-  node_image      = "kindest/node:v${local.kubernetes_version}"
+  name            = var.project_name
+  node_image      = "kindest/node:v${var.kubernetes_version}"
   wait_for_ready  = true
   kubeconfig_path = local.k8s_config_path
 
@@ -56,11 +34,8 @@ resource "kind_cluster" "this" {
     networking {
       api_server_address = "127.0.0.1"
       api_server_port    = 6443
-      # Pod subnet configuration (optional)
-      pod_subnet     = "10.244.0.0/16"
-      service_subnet = "10.96.0.0/16"
-      # Uncomment when ready to install cilium
-      #disable_default_cni = true
+      pod_subnet         = "10.244.0.0/16"
+      service_subnet     = "10.96.0.0/16"
     }
 
     # Control plane node configuration
@@ -78,7 +53,7 @@ resource "kind_cluster" "this" {
         "kind: InitConfiguration\nnodeRegistration:\n  kubeletExtraArgs:\n    node-labels: \"ingress-ready=true\"\n"
       ]
 
-      # Optional: Set resource limits
+      # Port mappings
       extra_port_mappings {
         container_port = 80
         host_port      = 80
@@ -93,10 +68,9 @@ resource "kind_cluster" "this" {
 
     # Worker nodes configuration
     dynamic "node" {
-      for_each = range(2) # Create 2 worker nodes
+      for_each = range(var.node_count)
       content {
         role = "worker"
-        # Optional: Add labels to worker nodes
         kubeadm_config_patches = [
           "kind: JoinConfiguration\nnodeRegistration:\n  kubeletExtraArgs:\n    node-labels: \"worker=true\"\n"
         ]
@@ -108,7 +82,6 @@ resource "kind_cluster" "this" {
       <<-TOML
         [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
           endpoint = ["http://kind-registry:5000"]
-        # Configure containerd to use insecure registries if needed
         [plugins."io.containerd.grpc.v1.cri".registry.configs."localhost:5000".tls]
           insecure_skip_verify = true
       TOML
@@ -123,11 +96,6 @@ provider "kubernetes" {
   client_certificate     = kind_cluster.this.client_certificate
   client_key             = kind_cluster.this.client_key
   cluster_ca_certificate = kind_cluster.this.cluster_ca_certificate
-
-  # Add timeout for operations
-  experiments {
-    manifest_resource = true
-  }
 }
 
 # Configure Helm provider with the Kind cluster credentials
@@ -139,86 +107,6 @@ provider "helm" {
     client_key             = kind_cluster.this.client_key
     cluster_ca_certificate = kind_cluster.this.cluster_ca_certificate
   }
-}
-
-# Install cert-manager for SSL certificate management
-resource "helm_release" "cert_manager" {
-  name             = "cert-manager"
-  repository       = "https://charts.jetstack.io"
-  chart            = "cert-manager"
-  version          = "v1.14.0" # Specify version for stability
-  namespace        = "cert-manager"
-  timeout          = 900
-  atomic           = true
-  create_namespace = true
-  depends_on       = [kind_cluster.this]
-
-  set {
-    name  = "installCRDs"
-    value = "true"
-  }
-
-  # Add monitoring
-  set {
-    name  = "prometheus.enabled"
-    value = "true"
-  }
-
-  values = [
-    yamlencode({
-      global = {
-        labels = local.common_labels
-      }
-    })
-  ]
-}
-
-# Install NGINX ingress controller
-resource "helm_release" "ingress_nginx" {
-  name             = "ingress-nginx"
-  repository       = "https://kubernetes.github.io/ingress-nginx"
-  chart            = "ingress-nginx"
-  version          = "4.9.0" # Specify version for stability
-  namespace        = "ingress-nginx"
-  create_namespace = true
-  depends_on       = [kind_cluster.this]
-
-  set {
-    name  = "controller.hostPort.enabled"
-    value = "true"
-  }
-
-  set {
-    name  = "controller.service.type"
-    value = "ClusterIP"
-  }
-
-  # Enable metrics for monitoring
-  set {
-    name  = "controller.metrics.enabled"
-    value = "true"
-  }
-
-  # Add resource limits
-  set {
-    name  = "controller.resources.requests.cpu"
-    value = "100m"
-  }
-  set {
-    name  = "controller.resources.requests.memory"
-    value = "128Mi"
-  }
-
-  wait    = true
-  timeout = 900
-
-  values = [
-    yamlencode({
-      global = {
-        labels = local.common_labels
-      }
-    })
-  ]
 }
 
 # Install ArgoCD
@@ -261,59 +149,47 @@ resource "helm_release" "argo_cd" {
 # Configure ArgoCD Ingress
 resource "kubernetes_manifest" "argo_cd_ingress" {
   manifest = {
-    "apiVersion" = "networking.k8s.io/v1"
-    "kind"       = "Ingress"
-    "metadata" = {
-      "name"      = "argo-cd-ingress"
-      "namespace" = "argo-cd"
-      "annotations" = {
+    apiVersion = "networking.k8s.io/v1"
+    kind       = "Ingress"
+    metadata = {
+      name      = "argo-cd-ingress"
+      namespace = "argo-cd"
+      annotations = {
         "nginx.ingress.kubernetes.io/ssl-passthrough"  = "true"
         "nginx.ingress.kubernetes.io/backend-protocol" = "HTTPS"
       }
-      "labels" = local.common_labels
+      labels = local.common_labels
     }
-    "spec" = {
-      "ingressClassName" = "nginx"
-      "rules" = [
+    spec = {
+      ingressClassName = "nginx"
+      rules = [
         {
-          "host" = local.argocd_domain
-          "http" = {
-            "paths" = [
+          host = var.argocd_domain # Changed from local.argocd_domain
+          http = {
+            paths = [
               {
-                "backend" = {
-                  "service" = {
-                    "name" = "argo-cd-argocd-server"
-                    "port" = {
-                      "name" = "http"
+                backend = {
+                  service = {
+                    name = "argo-cd-argocd-server"
+                    port = {
+                      name = "http"
                     }
                   }
                 }
-                "path"     = "/"
-                "pathType" = "Prefix"
+                path     = "/"
+                pathType = "Prefix"
               },
             ]
           }
         },
       ]
-      "tls" = [
+      tls = [
         {
-          "secretName" = "argo-cd-server-tls"
-          "hosts"      = [local.argocd_domain]
+          secretName = "argo-cd-server-tls"
+          hosts      = [var.argocd_domain] # Changed from local.argocd_domain
         },
       ]
     }
   }
   depends_on = [helm_release.argo_cd, helm_release.ingress_nginx]
-}
-
-# Output useful information
-output "cluster_endpoint" {
-  description = "Endpoint for the Kind cluster"
-  value       = kind_cluster.this.endpoint
-}
-
-output "argocd_admin_password" {
-  description = "Initial admin password for ArgoCD"
-  value       = "changeme"
-  sensitive   = true
 }

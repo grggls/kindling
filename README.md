@@ -1,122 +1,401 @@
-# Kindle
-This is a good starting point for K8s-related development or testing.
+# Kindling - Kubernetes Development Environment
 
-For additional config options for the "tehcyx/kind" TF provider, look [here](https://github.com/tehcyx/terraform-provider-kind/blob/master/docs/resources/cluster.md)
+A complete development environment using Kind (Kubernetes in Docker) with built-in observability, GitOps, and essential services.
 
-## Quickstart
-```
-> terraform init
-> terraform plan
-...
-Terraform will perform the following actions:
+## Features
 
-  # kind_cluster.kindle will be created
-  + resource "kind_cluster" "kindle" {
-      + client_certificate     = (known after apply)
-      + client_key             = (known after apply)
-      + cluster_ca_certificate = (known after apply)
-      + kubeconfig             = (known after apply)
-      + kubeconfig_path        = (known after apply)
-    }
+- Kind cluster with one control plane and two worker nodes
+- Complete observability stack:
+  - Prometheus for metrics collection
+  - Grafana with pre-configured dashboards
+  - Loki for log aggregation
+  - Tempo for distributed tracing
+  - OpenTelemetry for instrumentation
+- GitOps ready with ArgoCD
+- Ingress with NGINX controller
+- Certificate management with cert-manager
+- Custom Grafana dashboards for cluster monitoring
 
-Plan: 1 to add, 0 to change, 0 to destroy.
-...
-```
-These very import variables will be written to a file in your local project directory called `kindle-config`. With a little bit of luck, your `kubectl` will use that file when you're in this directory.
+## Prerequisites
 
-```
-> terraform apply
-...
-kind_cluster.kindle: Still creating... [3m30s elapsed]
-kind_cluster.kindle: Creation complete after 3m35s [id=kindle-kindest/node:v1.23.4]
-...
-...
-> kubectl get pods -n kube-system
-NAMESPACE            NAME                                           READY   STATUS    RESTARTS   AGE
-kube-system          coredns-64897985d-rgbcq                        1/1     Running   0          66s
-kube-system          coredns-64897985d-w6z57                        1/1     Running   0          66s
-kube-system          etcd-kindle-control-plane                      1/1     Running   0          80s
-kube-system          kindnet-mtwjd                                  1/1     Running   0          47s
-kube-system          kindnet-rz4pq                                  1/1     Running   0          66s
-kube-system          kindnet-x6d87                                  1/1     Running   0          47s
-kube-system          kube-apiserver-kindle-control-plane            1/1     Running   0          80s
-kube-system          kube-controller-manager-kindle-control-plane   1/1     Running   0          84s
-kube-system          kube-proxy-5qf99                               1/1     Running   0          47s
-kube-system          kube-proxy-m26nd                               1/1     Running   0          47s
-kube-system          kube-proxy-mrjq9                               1/1     Running   0          66s
-kube-system          kube-scheduler-kindle-control-plane            1/1     Running   0          83s
-local-path-storage   local-path-provisioner-5ddd94ff66-sk2nn        1/1     Running   0          66
-```
+- Docker
+- Terraform >= 1.0.0
+- kubectl
+- Helm
+- Update your `/etc/hosts` file:
+  ```
+  127.0.0.1 kind-registry kind-registry.local argocd.local
+  ```
 
-## Basic Services
+## Quick Start
 
-First things first, please add a cheeky line to your `/etc/hosts` file:
-```
-127.0.0.1 kind-registry kind-registry.local argocd.local
-```
+1. Initialize Terraform:
+   ```bash
+   terraform init
+   ```
 
-Now, at a minimum, our K8s cluster needs a few things to run. These have all been installed: 
+2. Deploy the cluster and services:
+   ```bash
+   terraform apply
+   ```
 
- - `kube-apiserver`
- - `etcd`
- - `kube-scheduler`
- - `kube-controller-manager`
+   If you encounter any timeout issues or need to cleanup a failed deployment:
+   ```bash
+   # Clean up failed Helm releases
+   helm uninstall loki -n monitoring
+   
+   # Optional: Clean up monitoring namespace entirely
+   kubectl delete namespace monitoring
+   
+   # Then run terraform apply again
+   terraform apply
+   ```
 
-The default network overlay for Kind is called `kindnet`, and we can see this in the list of runninng pods.
+## Cluster Access
 
-I'm running Docker desktop for a container runtime on my Mac. Interestingly, Kind is running `containerd` as the container runtime inside the cluster.
-
-We've configured the API server to run on 127.0.0.1:6443 and avoided being assigned a random port by Kind. This might pave the way for standardizing our `kube-config` (and potentially storing it in source control) later.
-
-For now let's just verify that the port config option is working:
-```
-> curl -k https://localhost:6443/apis/apps/v1/namespaces/kube-system/deployments
-{
-  "kind": "Status",
-  "apiVersion": "v1",
-  "metadata": {},
-  "status": "Failure",
-  "message": "deployments.apps is forbidden: User \"system:anonymous\" cannot list resource \"deployments\" in API group \"apps\" in the namespace \"kube-system\"",
-  "reason": "Forbidden",
-  "details": {
-    "group": "apps",
-    "kind": "deployments"
-  },
-  "code": 403
+After deployment, Terraform will output several useful endpoints and commands. View them with:
+```bash
+terraform output
 ```
 
-Quite a few Kind config options exist and it's fun/interesting to explore them. They're documented [here](https://kind.sigs.k8s.io/docs/user/configuration/)
+### Accessing Services
 
-We're using the [`helm` provider](https://registry.terraform.io/providers/hashicorp/helm/latest/docs) in our Terraform config. This is going to depend on some configuration in your local workstation. If you've used helm before, then most likely this is already set up. Maybe consider runnning `helm repo update` to verify that everything is working as it should. In practice, these are the most time-consuming steps in the project: evaluating requirements and dependencies, downloading helm charts, downloading sometimes very large container images. We've gone ahead and set the Terraform resource create timeout at 15 minutes (900 seconds) for each of these.
+1. **Grafana**:
+   ```bash
+   kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring
+   ```
+   - URL: http://localhost:3000
+   - Default credentials: admin/admin
+   - Pre-configured dashboards are available in the dashboards menu
 
-Helm in Terraform is going to install some necessaries for you:
- - [`cert-manager`](https://cert-manager.io/docs/getting-started/)
- - [`nginx-ingress-controller`](https://kubernetes.github.io/ingress-nginx/deploy/)
- - [`argocd`](https://kubebyexample.com/learning-paths/argo-cd/argo-cd-getting-started)
+2. **ArgoCD**:
+   ```bash
+   kubectl port-forward svc/argo-cd-argocd-server -n argo-cd 8080:443
+   ```
+   - URL: https://localhost:8080
+   - Default credentials: admin/changeme
+   - Get admin password:
+     ```bash
+     kubectl -n argo-cd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+     ```
 
-The Terraform config here uses a module to install and configure ArgoCD on our Kind cluster. You'll want to get the ArgoCD client onto your local machine and have a look at the fine manual: https://argo-cd.readthedocs.io/en/stable/getting_started/
+3. **Prometheus**:
+   ```bash
+   kubectl port-forward svc/prometheus-prometheus 9090:9090 -n monitoring
+   ```
+   - URL: http://localhost:9090
 
-https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
-https://registry.terraform.io/modules/aigisuk/argocd/kubernetes/latest
+## Monitoring Stack
 
-Some more steps to do in here: 
-https://kubebyexample.com/learning-paths/argo-cd/argo-cd-getting-started
-https://magmax.org/en/blog/argocd/
+The cluster comes with a comprehensive monitoring solution:
 
-This stuff could be better understood: 
-https://kind.sigs.k8s.io/docs/user/ingress/
+1. **Metrics (Prometheus)**
+   - Node-level metrics
+   - Container metrics
+   - Service metrics
+   - Custom metrics from applications
 
-This helps:
+2. **Logs (Loki + Promtail)**
+   - Centralized logging
+   - Log aggregation from all pods
+   - Label-based log querying
+
+3. **Traces (Tempo + OpenTelemetry)**
+   - Distributed tracing
+   - Request flow visualization
+   - Performance bottleneck identification
+
+4. **Pre-configured Dashboards**
+   - Cluster Overview
+   - Resource Usage
+   - Network & Storage
+   - ArgoCD Status
+
+## Dashboard Access
+
+The Grafana instance comes with three pre-configured dashboards:
+
+1. Basic Metrics Dashboard
+   - Cluster health overview
+   - Node count
+   - Pod status
+   - Namespace overview
+
+2. Resource Usage Dashboard
+   - CPU usage by node
+   - Memory usage by node
+   - Pod resource consumption
+
+3. Network and Storage Dashboard
+   - Network I/O metrics
+   - Disk usage
+   - Storage allocation
+
+Access the dashboards through Grafana at `http://localhost:3000` after port forwarding.
+
+## Working with the Cluster
+
+1. **Accessing the Kubernetes Dashboard**:
+   ```bash
+   # Create an admin service account
+   kubectl create serviceaccount cluster-admin-dashboard-sa
+   kubectl create clusterrolebinding cluster-admin-dashboard-sa \
+     --clusterrole=cluster-admin \
+     --serviceaccount=default:cluster-admin-dashboard-sa
+   
+   # Get the token
+   kubectl get secret $(kubectl get serviceaccount cluster-admin-dashboard-sa -o jsonpath="{.secrets[0].name}") \
+     -o jsonpath="{.data.token}" | base64 -d
+   ```
+
+2. **Working with Secrets**:
+   ```bash
+   # Create a secret
+   kubectl create secret generic my-secret \
+     --from-literal=key1=supersecret \
+     --namespace=my-namespace
+
+   # View secrets
+   kubectl get secrets -n my-namespace
+   
+   # Decode a secret
+   kubectl get secret my-secret -n my-namespace -o jsonpath="{.data.key1}" | base64 -d
+   ```
+
+3. **Deploying Applications**:
+   
+   Using kubectl:
+   ```bash
+   # Deploy a sample application
+   kubectl create deployment nginx --image=nginx
+   kubectl expose deployment nginx --port=80 --type=ClusterIP
+   
+   # Access the application
+   kubectl port-forward svc/nginx 8080:80
+   ```
+
+   Using ArgoCD:
+   ```bash
+   # Create an application in ArgoCD
+   argocd app create my-app \
+     --repo https://github.com/my-org/my-repo.git \
+     --path kubernetes \
+     --dest-server https://kubernetes.default.svc \
+     --dest-namespace my-namespace
+   
+   # Sync the application
+   argocd app sync my-app
+   ```
+
+4. **Viewing Logs**:
+   ```bash
+   # View logs for a pod
+   kubectl logs -f pod-name -n namespace
+   
+   # View logs in Grafana/Loki
+   # After port-forwarding Grafana:
+   # 1. Go to Explore
+   # 2. Select Loki datasource
+   # 3. Use LogQL queries, e.g.:
+   #    {namespace="monitoring"}
+   ```
+
+5. **Managing Resources**:
+   ```bash
+   # View resource usage
+   kubectl top nodes
+   kubectl top pods -A
+   
+   # View pod status
+   kubectl get pods -A -o wide
+   
+   # Describe resources for troubleshooting
+   kubectl describe pod pod-name -n namespace
+   kubectl describe node node-name
+   ```
+
+### Adding Custom Services
+
+1. **Using Helm**:
+   ```bash
+   # Add a helm repository
+   helm repo add bitnami https://charts.bitnami.com/bitnami
+   helm repo update
+   
+   # Install a chart
+   helm install my-release bitnami/postgresql \
+     --namespace my-namespace \
+     --create-namespace \
+     --set persistence.enabled=false
+   ```
+
+2. **Using ArgoCD**:
+   Create an Application manifest:
+   ```yaml
+   apiVersion: argoproj.io/v1alpha1
+   kind: Application
+   metadata:
+     name: my-app
+     namespace: argo-cd
+   spec:
+     project: default
+     source:
+       repoURL: https://github.com/my-org/my-repo.git
+       targetRevision: HEAD
+       path: k8s
+     destination:
+       server: https://kubernetes.default.svc
+       namespace: my-namespace
+     syncPolicy:
+       automated:
+         prune: true
+         selfHeal: true
+   ```
+
+## Logging with Promtail and Loki
+
+The cluster uses Promtail to collect logs from all pods and ships them to Loki. This setup provides:
+
+### Features
+- Automatic log collection from all containers
+- Label-based log querying
+- Metadata enrichment (namespace, pod name, node name)
+- Low resource footprint (10m CPU, 32Mi memory requests)
+
+### Viewing Logs
+You can view logs in several ways:
+
+1. **Through Grafana**:
+   ```bash
+   kubectl port-forward svc/prometheus-grafana 3000:80 -n monitoring
+   ```
+   Then:
+   - Navigate to Explore
+   - Select Loki as the data source
+   - Use LogQL queries, for example:
+     ```
+     {namespace="monitoring"}              # All logs from monitoring namespace
+     {namespace="argo-cd"}                 # All ArgoCD logs
+     {namespace="monitoring"} |= "error"   # Filter for error messages
+     ```
+
+2. **Using kubectl** (for comparison):
+   ```bash
+   # View logs for a specific pod
+   kubectl logs -f <pod-name> -n <namespace>
+   
+   # View logs for a specific container in a pod
+   kubectl logs -f <pod-name> -c <container-name> -n <namespace>
+   ```
+
+### LogQL Examples
+Loki uses LogQL for querying. Here are some useful queries:
+
+```logql
+# Show all logs from a specific namespace
+{namespace="monitoring"}
+
+# Filter for error logs across all namespaces
+{namespace=~".+"} |= "error"
+
+# Show logs from specific application pods
+{namespace="monitoring", app="prometheus"}
+
+# Show logs and parse JSON
+{namespace="monitoring"} | json
+
+# Count error occurrences by namespace
+count_over_time({namespace=~".+", level="error"}[1h]) by (namespace)
 ```
-> kubectl port-forward svc/argocd-server -n argocd 8080:443 &
-> curl localhost:8080
-Handling connection for 8080
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><title>Argo CD</title><base href="/"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="assets/favicon/favicon-32x32.png" sizes="32x32"/><link rel="icon" type="image/png" href="assets/favicon/favicon-16x16.png" sizes="16x16"/><link href="assets/fonts.css" rel="stylesheet"><script defer="defer" src="main.c87b5e37f99fc2a30256.js"></script></head><body><noscript><p>Your browser does not support JavaScript. Please enable JavaScript to view the site. Alternatively, Argo CD can be used with the <a href="https://argoproj.github.io/argo-cd/cli_installation/">Argo CD CLI</a>.</p></noscript><div id="app"></div></body><script defer="defer" src="extensions.js"></script></html>%
+
+### Configuration
+Promtail is configured via the Helm chart with:
+- Node tolerations to run on all cluster nodes
+- Resource limits to ensure stable operation
+- Automatic Kubernetes metadata labeling
+- Direct connection to Loki service
+
+For custom configurations, modify the `promtail` section in the `loki_stack` Helm release in `monitoring.tf`.
+
+## Configuration
+
+Main configuration variables can be adjusted in `variables.tf`:
+- `kubernetes_version`: Kubernetes version for the Kind cluster (default: "1.31.0")
+- `argocd_domain`: Domain for ArgoCD ingress (default: "argocd.local")
+- `grafana_admin_password`: Initial Grafana admin password (default: "admin")
+- `environment`: Environment name (default: "development")
+- `project_name`: Project name (default: "kindling")
+- `monitoring_storage_size`: Storage size for monitoring components (default: "10Gi")
+- `node_count`: Number of worker nodes (default: 2)
+
+## Project Structure
+
+```
+.
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                # CI workflow
+│       └── release.yml           # Release workflow
+├── main.tf                       # Core cluster configuration
+├── variables.tf                  # Variable definitions
+├── outputs.tf                    # Output definitions
+├── versions.tf                   # Version constraints
+├── monitoring.tf                 # Monitoring stack configuration
+├── argocd.tf                     # ArgoCD configuration
+├── dashboards.tf                 # Grafana dashboard configurations
+├── dashboards/
+│   ├── cluster-dashboard-part1.json   # Basic metrics
+│   ├── cluster-dashboard-part2.json   # Resource usage
+│   ├── cluster-dashboard-part3.json   # Network & storage
+│   └── argocd-dashboard.json         # ArgoCD metrics
+├── .tflint.hcl                  # TFLint configuration
+├── .gitignore
+├── CHANGELOG.md
+└── README.md
 ```
 
-## Day 2
+## Development vs Production Use
 
-Soon.
-At this point we're happy to take configuration duties inside your `kind` cluster away from Terraform and hand them over to ArgoCD.
+This configuration is optimized for local development and testing:
 
-https://argo-cd.readthedocs.io/en/stable/getting_started/
+- Persistence is disabled for Loki to improve startup time
+- Resource requests and limits are set low for local machine constraints
+- Authentication is simplified for easier access
+- Single-node configurations are used where possible
+
+For production use, you would want to:
+1. Enable persistence for all components
+2. Adjust resource requests and limits appropriately
+3. Enable proper authentication
+4. Configure proper backup and retention policies
+5. Use proper SSL certificates instead of self-signed
+6. Configure proper ingress with real domain names
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run the lint checks:
+   ```bash
+   tflint
+   terraform fmt -check -recursive
+   ```
+5. Create a Pull Request
+
+The CI pipeline will verify:
+- Terraform formatting
+- Terraform validation
+- TFLint checks
+- JSON formatting
+- Security scanning with TFSec and Checkov
+
+## References
+
+- [Kind Configuration](https://kind.sigs.k8s.io/docs/user/configuration/)
+- [ArgoCD Documentation](https://argo-cd.readthedocs.io/en/stable/)
+- [Prometheus Operator](https://prometheus-operator.dev/)
+- [Grafana Documentation](https://grafana.com/docs/)
+- [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
