@@ -348,7 +348,7 @@ Main configuration variables can be adjusted in `variables.tf`:
 │   ├── cluster-dashboard-part2.json   # Resource usage
 │   ├── cluster-dashboard-part3.json   # Network & storage
 │   └── argocd-dashboard.json         # ArgoCD metrics
-├── .tflint.hcl                  # TFLint configuration
+├── .pre-commit-config.yaml           # Pre-commit configuration
 ├── .gitignore
 ├── CHANGELOG.md
 └── README.md
