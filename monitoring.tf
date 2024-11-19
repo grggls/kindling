@@ -149,7 +149,7 @@ resource "helm_release" "loki_stack" {
   namespace        = "monitoring"
   create_namespace = true
   timeout          = 300
-  atomic           = true
+  atomic          = true
   force_update     = true
   cleanup_on_fail  = true
 
@@ -157,71 +157,18 @@ resource "helm_release" "loki_stack" {
     kubernetes_namespace.monitoring
   ]
 
-  # Loki configuration (keeping the working part)
+  # Core settings
   set {
     name  = "loki.enabled"
     value = "true"
   }
 
   set {
-    name  = "loki.persistence.enabled"
-    value = "false"
-  }
-
-  set {
-    name  = "loki.auth_enabled"
-    value = "false"
-  }
-
-  # Re-enable Promtail with adjusted probes
-  set {
     name  = "promtail.enabled"
     value = "true"
   }
 
-  # Adjust Promtail readiness probe
-  set {
-    name  = "promtail.readinessProbe.initialDelaySeconds"
-    value = "45"
-  }
-
-  set {
-    name  = "promtail.readinessProbe.timeoutSeconds"
-    value = "2"
-  }
-
-  set {
-    name  = "promtail.readinessProbe.periodSeconds"
-    value = "15"
-  }
-
-  set {
-    name  = "promtail.readinessProbe.failureThreshold"
-    value = "10"
-  }
-
-  # Adjust Promtail liveness probe
-  set {
-    name  = "promtail.livenessProbe.initialDelaySeconds"
-    value = "45"
-  }
-
-  set {
-    name  = "promtail.livenessProbe.timeoutSeconds"
-    value = "2"
-  }
-
-  set {
-    name  = "promtail.livenessProbe.periodSeconds"
-    value = "15"
-  }
-
-  set {
-    name  = "promtail.livenessProbe.failureThreshold"
-    value = "10"
-  }
-
-  # Minimal resources
+  # Basic resource requests
   set {
     name  = "promtail.resources.requests.cpu"
     value = "10m"
@@ -242,45 +189,56 @@ resource "helm_release" "loki_stack" {
     value = "64Mi"
   }
 
-  # Keep the working Loki configuration
+  # Match the probe pattern of working components
   set {
-    name  = "loki.readinessProbe.initialDelaySeconds"
-    value = "30"
+    name  = "promtail.readinessProbe.httpGet.path"
+    value = "/ready"
   }
 
   set {
-    name  = "loki.livenessProbe.initialDelaySeconds"
-    value = "30"
+    name  = "promtail.readinessProbe.httpGet.port"
+    value = "http-metrics"
   }
 
   set {
-    name  = "loki.config.limits_config.reject_old_samples"
-    value = "true"
+    name  = "promtail.readinessProbe.initialDelaySeconds"
+    value = "10"
   }
 
   set {
-    name  = "loki.config.limits_config.reject_old_samples_max_age"
-    value = "168h"
+    name  = "promtail.readinessProbe.timeoutSeconds"
+    value = "1"
   }
 
   set {
-    name  = "loki.resources.requests.cpu"
-    value = "10m"
+    name  = "promtail.readinessProbe.successThreshold"
+    value = "1"
   }
 
   set {
-    name  = "loki.resources.requests.memory"
-    value = "32Mi"
+    name  = "promtail.readinessProbe.failureThreshold"
+    value = "5"
+  }
+
+  # Ports configuration
+  set {
+    name  = "promtail.config.serverPort"
+    value = "3101"
   }
 
   set {
-    name  = "loki.resources.limits.cpu"
-    value = "50m"
+    name  = "promtail.ports[0].name"
+    value = "http-metrics"
   }
 
   set {
-    name  = "loki.resources.limits.memory"
-    value = "64Mi"
+    name  = "promtail.ports[0].containerPort"
+    value = "3101"
+  }
+  
+  set {
+    name  = "promtail.ports[0].protocol"
+    value = "TCP"
   }
 }
 
