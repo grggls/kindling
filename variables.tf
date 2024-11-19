@@ -15,7 +15,7 @@ variable "project_name" {
 variable "kubernetes_version" {
   description = "Kubernetes version to use for the Kind cluster"
   type        = string
-  default     = "1.31.0"
+  default     = "1.31.2"
 }
 
 # Domain variables
