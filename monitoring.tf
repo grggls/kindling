@@ -149,7 +149,7 @@ resource "helm_release" "loki_stack" {
   namespace        = "monitoring"
   create_namespace = true
   timeout          = 300
-  atomic          = true
+  atomic           = true
   force_update     = true
   cleanup_on_fail  = true
 
@@ -235,7 +235,7 @@ resource "helm_release" "loki_stack" {
     name  = "promtail.ports[0].containerPort"
     value = "3101"
   }
-  
+
   set {
     name  = "promtail.ports[0].protocol"
     value = "TCP"
