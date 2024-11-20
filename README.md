@@ -30,26 +30,29 @@ A complete development environment using Kind (Kubernetes in Docker) with built-
 ## Quick Start
 
 1. Initialize Terraform:
-   ```bash
-   terraform init
-   ```
+```bash
+terraform init
+```
 
-2. Deploy the cluster and services:
-   ```bash
-   terraform apply
-   ```
+2. Deploy the cluster and services with the Makefile:
+This Makefile provides commands to manage your Terraform infrastructure deployment:
 
-   If you encounter any timeout issues or need to cleanup a failed deployment:
-   ```bash
-   # Clean up failed Helm releases
-   helm uninstall loki -n monitoring
-   
-   # Optional: Clean up monitoring namespace entirely
-   kubectl delete namespace monitoring
-   
-   # Then run terraform apply again
-   terraform apply
-   ```
+`make apply`: Deploys infrastructure in sequence, first creating the kind cluster and then applying remaining resources
+`make destroy`: Safely tears down infrastructure by first removing all Helm releases, then destroying remaining resources, and finally removing the kind cluster
+
+The destroy command automatically detects and removes all Helm releases from the Terraform state before proceeding with full destruction, preventing dependency conflicts.
+
+If you encounter any timeout issues or need to cleanup a failed deployment:
+```bash
+# Clean up failed Helm releases
+helm uninstall loki -n monitoring
+
+# Optional: Clean up monitoring namespace entirely
+kubectl delete namespace monitoring
+
+# Then run terraform apply again
+terraform apply
+```
 
 ## Cluster Access
 
@@ -81,7 +84,7 @@ terraform output
 
 3. **Prometheus**:
    ```bash
-   kubectl port-forward svc/prometheus-prometheus 9090:9090 -n monitoring
+   kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090 -n monitoring
    ```
    - URL: http://localhost:9090
 
