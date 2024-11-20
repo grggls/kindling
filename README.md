@@ -84,7 +84,7 @@ terraform output
 
 3. **Prometheus**:
    ```bash
-   kubectl port-forward svc/prometheus-prometheus 9090:9090 -n monitoring
+   kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090 -n monitoring
    ```
    - URL: http://localhost:9090
 
